@@ -1,0 +1,168 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    overflow: hidden;
+    background: #1a1a1a;
+    color: #fff;
+}
+
+#game-container {
+    width: 100vw;
+    height: 100vh;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+#ui-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 16px;
+    border-radius: 10px;
+    min-width: 240px;
+    max-height: 90vh;
+    overflow-y: auto;
+    z-index: 100;
+
+    /* 新增：平滑动画，让折叠看起来更自然 */
+    transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+/* 标题栏：标题 + 小按钮横向排布 */
+.ui-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.ui-header h2 {
+    margin: 0;
+    font-size: 16px;
+    color: #4CAF50;
+}
+
+/* 小小的圆形箭头按钮，不那么丑，也不占地方 */
+.toggle-ui-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: #333;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.toggle-ui-btn:hover {
+    background: #555;
+    transform: scale(1.05);
+}
+
+/* 折叠状态：向左滑走 80%，只留一条边露出来 */
+#ui-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.75);
+    padding: 10px;                 /* 缩小内边距 */
+    border-radius: 8px;
+    width: 220px;                  /* UI 更窄 */
+    font-size: 13px;               /* 更紧凑 */
+    z-index: 100;
+}
+
+#ui-panel h2 {
+    font-size: 14px;               /* 缩小标题 */
+    margin-bottom: 8px;
+}
+
+#ui-panel h3 {
+    font-size: 12px;
+    margin-top: 10px;
+    margin-bottom: 6px;
+}
+
+.stats div {
+    margin: 5px 0;
+    font-size: 13px;
+}
+
+button {
+    width: 100%;
+    padding: 6px 8px;               /* 按钮更薄 */
+    font-size: 12px;                /* 更小字体 */
+    margin: 4px 0;
+    border-radius: 4px;
+}
+
+.stats div {
+    margin: 8px 0;
+    font-size: 16px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #444;
+    margin: 15px 0;
+}
+
+button {
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0;
+    background: #4CAF50;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+button:hover:not(:disabled) {
+    background: #45a049;
+}
+
+button:disabled {
+    background: #666;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.btn-attraction {
+    background: #2196F3;
+}
+
+.btn-attraction:hover:not(:disabled) {
+    background: #1976D2;
+}
+
+.btn-attraction.selected {
+    background: #FF9800;
+    border: 2px solid #FFC107;
+}
+
+#info {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #aaa;
+}
+
+.hidden {
+    display: none !important;
+}

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Durham Market Festival Planner</title>
+    <link rel="stylesheet" href="/style.css">
+    <!-- 防止 favicon 404 -->
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <!-- UI面板 -->
+    <div id="ui-panel">
+    <div class="ui-header">
+        <h2>Durham Festival Planner</h2>
+        <button id="toggle-ui" class="toggle-ui-btn">⮜</button>
+    </div>
+
+    <div class="stats">
+        <div>💰 Money: $<span id="money">1000</span></div>
+        <div>⭐ Reputation: <span id="reputation">0</span></div>
+        <div>😊 Happiness: <span id="happiness">50</span>%</div>
+        <div>👥 Visitors: <span id="visitor-count">0</span></div>
+    </div>
+    
+    <hr>
+    
+    <h3>Place Attractions</h3>
+    <div id="attraction-buttons">
+        <button class="btn-attraction" data-type="food" data-cost="100">
+            🍔 Food Stall - $100
+        </button>
+        <button class="btn-attraction" data-type="carousel" data-cost="500" disabled>
+            🎠 Carousel - $500 [Locked]
+        </button>
+        <button class="btn-attraction" data-type="ferris" data-cost="1000" disabled>
+            🎡 Ferris Wheel - $1000 [Locked]
+        </button>
+    </div>
+    
+    <hr>
+    
+    <h3>View Options</h3>
+    <button id="btn-heatmap">Toggle Heatmap</button>
+    <button id="btn-accessible">Show Accessible Routes</button>
+    
+    <hr>
+    
+    <div id="info">
+        <small>Click on the ground to place attractions</small>
+    </div>
+</div>
+
+    
+    <!-- 3D画布 -->
+    <div id="game-container"></div>
+    
+
+    <!-- Vite 入口脚本：注意 type="module" 且路径为 /src/main.js -->
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
