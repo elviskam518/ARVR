@@ -1,609 +1,449 @@
 // src/game.js
-import * as THREE from 'three';
+import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.js';
 import { createAttractionMesh } from './attraction.js';
 import { Visitor } from './visitor.js';
 import { PathFinder } from './pathfinding.js';
+import { getFacilityConfig } from './facilities.js';
 
 export const Game = {
-    scene: null,
-    ground: null,
-    gridWidth: 20,
-    gridHeight: 20,
-    grid: [],
-    // ⭐ 记录每个格子是否是某个设施的“可游玩位置”
-    playTileGrid: [],
-    
-    money: 1000,
-    reputation: 0,
-    happiness: 50,
-    visitorCount: 0,
-    
-    selectedAttractionType: null,
-    selectedAttractionCost: 0,
+  scene: null,
+  ground: null,
+  gridWidth: 20,
+  gridHeight: 20,
+  grid: [],
 
-    visitors: [],
-    spawnTimer: 0,
-    spawnInterval: 4,
-    entranceGridX: 10,
-    entranceGridY: 19,
-    exitGridX: 10,
-    exitGridY: 0,
+  money: 10000,
+  reputation: 0,
+  happiness: 50,
+  visitorCount: 0,
 
-    pathfinder: null,
-    
-    init(scene, ground) {
-        this.scene = scene;
-        this.ground = ground;
+  selectedAttractionType: null,
+  selectedAttractionCost: 0,
 
-        this._initGrid();
+  visitors: [],
+  spawnTimer: 0,
+  spawnInterval: 5,
+  entranceGridX: 10,
+  entranceGridY: 19,
+  exitGridX: 10,
+  exitGridY: 0,
 
-        this.entranceGridX = Math.floor(this.gridWidth / 2);
-        this.entranceGridY = this.gridHeight - 1;
-        this.exitGridX = Math.floor(this.gridWidth / 2);
-        this.exitGridY = 0;
+  pathfinder: null,
 
-        this.pathfinder = new PathFinder(this.grid, this.gridWidth, this.gridHeight);
+  init(scene, ground) {
+    this.scene = scene;
+    this.ground = ground;
 
-        this._bindUI();
-        this._updateUI();
-        this._createEntranceExitMarkers();
-    },
-    
-    _initGrid() {
-        this.grid = [];
-        this.playTileGrid = [];
+    this._initGrid();
 
-        for (let y = 0; y < this.gridHeight; y++) {
-            const row = [];
-            const playRow = [];
-            for (let x = 0; x < this.gridWidth; x++) {
-                row.push(null);
-                playRow.push(null);
-            }
-            this.grid.push(row);
-            this.playTileGrid.push(playRow);
+    this.entranceGridX = Math.floor(this.gridWidth / 2);
+    this.entranceGridY = this.gridHeight - 1;
+    this.exitGridX = Math.floor(this.gridWidth / 2);
+    this.exitGridY = 0;
+
+    this.pathfinder = new PathFinder(this.grid, this.gridWidth, this.gridHeight);
+
+    this._bindUI();
+    this._updateUI();
+    this._createEntranceExitMarkers();
+  },
+
+  _initGrid() {
+    this.grid = [];
+    for (let y = 0; y < this.gridHeight; y++) {
+      const row = [];
+      for (let x = 0; x < this.gridWidth; x++) row.push(null);
+      this.grid.push(row);
+    }
+  },
+
+  _gridToWorld(gridX, gridY) {
+    const worldX = gridX * 2 - this.gridWidth;   // -20 .. +20
+    const worldZ = gridY * 2 - this.gridHeight;
+    return { worldX, worldZ };
+  },
+
+  _entranceWorldPos() {
+    return this._gridToWorld(this.entranceGridX, this.entranceGridY);
+  },
+
+  _exitWorldPos() {
+    return this._gridToWorld(this.exitGridX, this.exitGridY);
+  },
+
+  _createEntranceExitMarkers() {
+    const entrancePos = this._entranceWorldPos();
+    const exitPos = this._exitWorldPos();
+
+    const makeMarker = (pos, color) => {
+      const geo = new THREE.CylinderGeometry(0.7, 0.7, 0.1, 20);
+      const mat = new THREE.MeshStandardMaterial({ color });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(pos.worldX, 0.05, pos.worldZ);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    };
+
+    makeMarker(entrancePos, 0x4caf50);
+    makeMarker(exitPos, 0xf44336);
+  },
+
+  _bindUI() {
+    const buttons = document.querySelectorAll('.btn-attraction');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = btn.dataset.type;
+        const cost = parseInt(btn.dataset.cost, 10);
+
+        buttons.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+
+        this.selectedAttractionType = type;
+        this.selectedAttractionCost = cost;
+
+        const info = document.getElementById('info');
+        if (info) {
+          info.textContent = `Placing: ${type} (Cost: $${cost}) - click on the ground`;
         }
-    },
-
-    _gridToWorld(gridX, gridY) {
-        const worldX = gridX * 2 - 20 + 1;
-        const worldZ = gridY * 2 - 20 + 1;
-        return { worldX, worldZ };
-    },
-
-    _entranceWorldPos() {
-        return this._gridToWorld(this.entranceGridX, this.entranceGridY);
-    },
-
-    _exitWorldPos() {
-        return this._gridToWorld(this.exitGridX, this.exitGridY);
-    },
-
-    _createEntranceExitMarkers() {
-        const entrancePos = this._entranceWorldPos();
-        const exitPos = this._exitWorldPos();
-
-        const entranceGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.1, 20);
-        const entranceMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
-        const entranceMesh = new THREE.Mesh(entranceGeo, entranceMat);
-        entranceMesh.position.set(entrancePos.worldX, 0.05, entrancePos.worldZ);
-        entranceMesh.rotation.x = -Math.PI / 2;
-        entranceMesh.receiveShadow = true;
-        this.scene.add(entranceMesh);
-
-        const exitGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.1, 20);
-        const exitMat = new THREE.MeshStandardMaterial({ color: 0xf44336 });
-        const exitMesh = new THREE.Mesh(exitGeo, exitMat);
-        exitMesh.position.set(exitPos.worldX, 0.05, exitPos.worldZ);
-        exitMesh.rotation.x = -Math.PI / 2;
-        exitMesh.receiveShadow = true;
-        this.scene.add(exitMesh);
-    },
-    
-    _bindUI() {
-        const attractionButtons = document.querySelectorAll('.btn-attraction');
-        attractionButtons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const type = btn.dataset.type;
-                const cost = parseInt(btn.dataset.cost, 10);
-                
-                attractionButtons.forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                
-                this.selectedAttractionType = type;
-                this.selectedAttractionCost = cost;
-                
-                const info = document.getElementById('info');
-                if (info) {
-                    info.textContent = `Placing: ${type} (Cost: $${cost}) - click on the ground`;
-                }
-            });
-        });
-        
-        const heatmapBtn = document.getElementById('btn-heatmap');
-        if (heatmapBtn) {
-            heatmapBtn.addEventListener('click', () => {
-                console.log('Toggle heatmap (TODO)');
-            });
-        }
-
-        const accessibleBtn = document.getElementById('btn-accessible');
-        if (accessibleBtn) {
-            accessibleBtn.addEventListener('click', () => {
-                console.log('Show accessible routes (TODO)');
-            });
-        }
-    },
-    
-    _updateUI() {
-        const mSpan = document.getElementById('money');
-        const rSpan = document.getElementById('reputation');
-        const hSpan = document.getElementById('happiness');
-        const vSpan = document.getElementById('visitor-count');
-
-        if (mSpan) mSpan.textContent = this.money;
-        if (rSpan) rSpan.textContent = this.reputation;
-        if (hSpan) hSpan.textContent = this.happiness;
-        if (vSpan) vSpan.textContent = this.visitorCount;
-
-        const foodBtn = document.querySelector("button[data-type='food']");
-        const carouselBtn = document.querySelector("button[data-type='carousel']");
-        const ferrisBtn = document.querySelector("button[data-type='ferris']");
-
-        if (foodBtn) {
-            const cost = parseInt(foodBtn.dataset.cost, 10);
-            foodBtn.disabled = this.money < cost;
-            foodBtn.textContent = foodBtn.disabled
-                ? `🍔 Food Stall - $${cost} [Locked]`
-                : `🍔 Food Stall - $${cost}`;
-        }
-
-        if (carouselBtn) {
-            const cost = parseInt(carouselBtn.dataset.cost, 10);
-            carouselBtn.disabled = this.money < cost;
-            carouselBtn.textContent = carouselBtn.disabled
-                ? `🎠 Carousel - $${cost} [Locked]`
-                : `🎠 Carousel - $${cost}`;
-        }
-
-        if (ferrisBtn) {
-            const cost = parseInt(ferrisBtn.dataset.cost, 10);
-            ferrisBtn.disabled = this.money < cost;
-            ferrisBtn.textContent = ferrisBtn.disabled
-                ? `🎡 Ferris Wheel - $${cost} [Locked]`
-                : `🎡 Ferris Wheel - $${cost}`;
-        }
-
-        const selectedBtn = document.querySelector('.btn-attraction.selected');
-        if (selectedBtn && selectedBtn.disabled) {
-            selectedBtn.classList.remove('selected');
-            this.selectedAttractionType = null;
-            this.selectedAttractionCost = 0;
-            const info = document.getElementById('info');
-            if (info) info.textContent = 'Click on the ground to place attractions';
-        }
-    },
-    
-    // 单格检查（可能其他地方会用到）
-    canPlace(gridX, gridY) {
-        if (gridX < 0 || gridX >= this.gridWidth) return false;
-        if (gridY < 0 || gridY >= this.gridHeight) return false;
-
-        if ((gridX === this.entranceGridX && gridY === this.entranceGridY) ||
-            (gridX === this.exitGridX && gridY === this.exitGridY)) {
-            return false;
-        }
-
-        return this.grid[gridY][gridX] === null;
-    },
-
-    // 矩形区域能不能放下（w×h 设施）
-    _canPlaceRect(gridX, gridY, w, h) {
-        for (let dy = 0; dy < h; dy++) {
-            for (let dx = 0; dx < w; dx++) {
-                const x = gridX + dx;
-                const y = gridY + dy;
-                if (x < 0 || x >= this.gridWidth || y < 0 || y >= this.gridHeight) {
-                    return false;
-                }
-                if (this.grid[y][x] !== null) {
-                    return false;
-                }
-                if ((x === this.entranceGridX && y === this.entranceGridY) ||
-                    (x === this.exitGridX && y === this.exitGridY)) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    },
-
-    // 按类型固定颜色
-    _updateFacilityColor(cell) {
-        if (!cell || !cell.mesh || !cell.mesh.material) return;
-
-        let color;
-        switch (cell.type) {
-            case 'food':
-                color = 0xffc107; // 金黄
-                break;
-            case 'carousel':
-                color = 0x2196f3; // 蓝
-                break;
-            case 'ferris':
-                color = 0x9c27b0; // 紫
-                break;
-            default:
-                color = 0x4caf50; // 默认绿
-        }
-        cell.mesh.material.color.setHex(color);
-    },
-
-    placeAttraction(gridX, gridY) {
-        if (!this.selectedAttractionType) return;
-
-        // ⭐ 设施尺寸：food / carousel 1×1，ferris 2×2
-        let sizeW = 1;
-        let sizeH = 1;
-        if (this.selectedAttractionType === 'ferris') {
-            sizeW = 2;
-            sizeH = 2;
-        }
-
-        if (!this._canPlaceRect(gridX, gridY, sizeW, sizeH)) {
-            console.log('Cannot place here (rect blocked).');
-            return;
-        }
-
-        if (this.money < this.selectedAttractionCost) {
-            console.log('Not enough money.');
-            return;
-        }
-        
-        const { worldX, worldZ } = this._gridToWorld(gridX, gridY);
-        
-        const mesh = createAttractionMesh(this.selectedAttractionType);
-        mesh.position.set(worldX, 1, worldZ);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        this.scene.add(mesh);
-
-        let income = 20;
-        let happinessGain = 2;
-        let playDuration = 2;
-        let capacity = 3;
-
-        if (this.selectedAttractionType === 'carousel') {
-            income = 40;
-            happinessGain = 4;
-            playDuration = 3;
-            capacity = 5;
-        } else if (this.selectedAttractionType === 'ferris') {
-            income = 60;
-            happinessGain = 6;
-            playDuration = 4;
-            capacity = 8;
-        }
-        
-        // ⭐ 主设施对象（放在左上角 cell 上）
-        const facility = {
-            type: this.selectedAttractionType,
-            mesh,
-            income,
-            happinessGain,
-            playDuration,
-            capacity,
-            currentPlayers: 0,
-            sizeW,
-            sizeH,
-            playTiles: []
-        };
-
-        // 占用矩形区域：左上角是主 cell，其余是 part
-        for (let dy = 0; dy < sizeH; dy++) {
-            for (let dx = 0; dx < sizeW; dx++) {
-                const gx2 = gridX + dx;
-                const gy2 = gridY + dy;
-
-                if (dx === 0 && dy === 0) {
-                    this.grid[gy2][gx2] = facility;
-                } else {
-                    this.grid[gy2][gx2] = {
-                        isPart: true,
-                        parent: facility
-                    };
-                }
-            }
-        }
-
-        // ⭐ 在设施下面一排，按宽度生成可游玩格子（playTiles）
-        const playY = gridY + sizeH;
-        if (playY >= 0 && playY < this.gridHeight) {
-            for (let dx = 0; dx < sizeW; dx++) {
-                const px = gridX + dx;
-                if (this.grid[playY][px] === null) {
-                    facility.playTiles.push({ x: px, y: playY });
-                    this.playTileGrid[playY][px] = facility;
-                }
-            }
-        }
-
-        this._updateFacilityColor(facility);
-        
-        this.money -= this.selectedAttractionCost;
-        this.reputation += 1;
-        this.happiness = Math.min(100, this.happiness + 1);
-        this._updateUI();
-    },
-
-    _getAllFacilities() {
-        const result = [];
-        for (let y = 0; y < this.gridHeight; y++) {
-            for (let x = 0; x < this.gridWidth; x++) {
-                const cell = this.grid[y][x];
-                if (cell && !cell.isPart) { // 只算主设施
-                    result.push({ x, y, cell });
-                }
-            }
-        }
-        return result;
-    },
-
-    _findWalkableNeighbor(fx, fy) {
-        const candidates = [
-            { x: fx + 1, y: fy },
-            { x: fx - 1, y: fy },
-            { x: fx,     y: fy + 1 },
-            { x: fx,     y: fy - 1 }
-        ];
-
-        for (const c of candidates) {
-            if (c.x < 0 || c.x >= this.gridWidth || c.y < 0 || c.y >= this.gridHeight) continue;
-            if (this.grid[c.y][c.x] === null) {
-                return c;
-            }
-        }
-        return null;
-    },
-
-    // 曼哈顿距离
-    _manhattan(ax, ay, bx, by) {
-        return Math.abs(ax - bx) + Math.abs(ay - by);
-    },
-
-    // ⭐ 计算某个设施对当前游客的“吸引力分数”
-    _scoreFacility(startX, startY, fx, fy, cell) {
-        if (!cell.playTiles || cell.playTiles.length === 0) return 0;
-
-        // 在所有 playTiles 中找一个离游客最近的
-        let bestTarget = null;
-        let bestDist = Infinity;
-        for (const pt of cell.playTiles) {
-            const d = this._manhattan(startX, startY, pt.x, pt.y);
-            if (d < bestDist) {
-                bestDist = d;
-                bestTarget = pt;
-            }
-        }
-
-        const distance = bestDist;
-        const quality = (cell.happinessGain || 1);
-
-        const cap = cell.capacity || 1;
-        const cur = cell.currentPlayers || 0;
-        const crowd = cur / cap;    // 0 ~ 1
-
-        const distanceCost = distance + 1;
-        const crowdCost = 1 + crowd * 2;
-        const score = quality / (distanceCost * crowdCost);
-
-        return { score, targetX: bestTarget.x, targetY: bestTarget.y };
-    },
-
-    // ⭐ 从所有设施中挑一个“最值得去”的目标
-    _chooseFacilityTarget(startX, startY) {
-        const facilities = this._getAllFacilities();
-        if (facilities.length === 0) return null;
-
-        let bestScore = 0;
-        let bestTarget = null;
-
-        for (const f of facilities) {
-            const { x: fx, y: fy, cell } = f;
-            const result = this._scoreFacility(startX, startY, fx, fy, cell);
-            if (!result) continue;
-
-            if (result.score > bestScore) {
-                bestScore = result.score;
-                bestTarget = { x: result.targetX, y: result.targetY };
-            }
-        }
-
-        if (!bestTarget || bestScore < 0.05) {
-            return null;
-        }
-
-        return bestTarget;
-    },
-
-    _spawnVisitor() {
-        const { worldX: sx, worldZ: sz } = this._entranceWorldPos();
-
-        const entrance = { x: this.entranceGridX, y: this.entranceGridY };
-        const exit     = { x: this.exitGridX,      y: this.exitGridY };
-
-        const waypoints = [entrance];
-
-        const facilityTarget = this._chooseFacilityTarget(entrance.x, entrance.y);
-        if (facilityTarget) {
-            waypoints.push(facilityTarget);
-        }
-
-        waypoints.push(exit);
-
-        let fullPath = [];
-        let ok = true;
-        let current = waypoints[0];
-
-        for (let i = 1; i < waypoints.length; i++) {
-            const next = waypoints[i];
-            const segment = this.pathfinder.findPath(current.x, current.y, next.x, next.y);
-            if (!segment) {
-                ok = false;
-                break;
-            }
-            if (fullPath.length > 0) segment.shift();
-            fullPath = fullPath.concat(segment);
-            current = next;
-        }
-
-        if (!ok || fullPath.length === 0) {
-            const direct = this.pathfinder.findPath(entrance.x, entrance.y, exit.x, exit.y);
-            if (!direct) {
-                console.warn('No path found at all for visitor');
-                return;
-            }
-            fullPath = direct;
-        }
-
-        const v = new Visitor(
-            sx,
-            sz,
-            fullPath,
-            this.scene,
-            (visitor, gx, gy) => this._onVisitorEnterTile(visitor, gx, gy)
-        );
-
-        this.visitors.push(v);
-        this.visitorCount += 1;
-        this._updateUI();
-    },
-
-    _onVisitorEnterTile(visitor, gx, gy) {
-        if (visitor.finished || visitor.playing) return;
-
-        visitor.lastGridX = gx;
-        visitor.lastGridY = gy;
-
-        if (gy < 0 || gy >= this.gridHeight || gx < 0 || gx >= this.gridWidth) return;
-
-        // ⭐ 只从 playTileGrid 中查这个格子对应的设施
-        let foundCell = this.playTileGrid[gy][gx];
-        if (!foundCell) return;
-
-        if (foundCell.isPart && foundCell.parent) {
-            foundCell = foundCell.parent;
-        }
-
-        // 已经玩过这种 type
-        if (visitor.playedTypes && visitor.playedTypes.has(foundCell.type)) {
-            return;
-        }
-
-        const cap = foundCell.capacity || 1;
-        const cur = foundCell.currentPlayers || 0;
-        if (cur >= cap) {
-            return;
-        }
-
-        // ⭐ 100% 会玩（只要有空位）
-        if (visitor.playedTypes) {
-            visitor.playedTypes.add(foundCell.type);
-        }
-
-        foundCell.currentPlayers = (foundCell.currentPlayers || 0) + 1;
-        this._updateFacilityColor(foundCell);
-
-        visitor.playing = true;
-        visitor.playTimer = foundCell.playDuration || 2;
-        visitor.currentFacility = foundCell;
-
-        const gain = foundCell.happinessGain || 1;
-
-        if (visitor.happiness == null) visitor.happiness = 50;
-        visitor.happiness = Math.max(0, Math.min(100, visitor.happiness + gain));
-
-        this.happiness = Math.min(100, this.happiness + gain);
-
-        this.money += foundCell.income || 10;
+      });
+    });
+  },
+
+  _updateUI() {
+    const mSpan = document.getElementById('money');
+    const rSpan = document.getElementById('reputation');
+    const hSpan = document.getElementById('happiness');
+    const vSpan = document.getElementById('visitor-count');
+
+    if (mSpan) mSpan.textContent = Math.round(this.money);
+    if (rSpan) rSpan.textContent = Math.round(this.reputation);
+    if (hSpan) hSpan.textContent = Math.round(this.happiness);
+    if (vSpan) vSpan.textContent = this.visitorCount;
+
+    const updateButton = (selector, label) => {
+      const btn = document.querySelector(selector);
+      if (!btn) return;
+      const cost = parseInt(btn.dataset.cost, 10);
+      const locked = this.money < cost;
+      btn.disabled = locked;
+      btn.textContent = `${label} - $${cost}` + (locked ? ' [Locked]' : '');
+    };
+
+    updateButton("button[data-type='food']", '🍔 Food Stall');
+    updateButton("button[data-type='carousel']", '🎠 Carousel');
+    updateButton("button[data-type='ferris']", '🎡 Ferris Wheel');
+
+    const selectedBtn = document.querySelector('.btn-attraction.selected');
+    if (selectedBtn && selectedBtn.disabled) {
+      selectedBtn.classList.remove('selected');
+      this.selectedAttractionType = null;
+      this.selectedAttractionCost = 0;
+      const info = document.getElementById('info');
+      if (info) info.textContent = 'Click on the ground to place attractions';
+    }
+  },
+
+  canPlace(gridX, gridY) {
+  // 1. 基本边界检查
+  if (gridX < 0 || gridX >= this.gridWidth) return false;
+  if (gridY < 0 || gridY >= this.gridHeight) return false;
+
+  // 入口 / 出口不能放
+  if ((gridX === this.entranceGridX && gridY === this.entranceGridY) ||
+      (gridX === this.exitGridX && gridY === this.exitGridY)) {
+    return false;
+  }
+
+  // 这一格必须是空的
+  if (this.grid[gridY][gridX] !== null) return false;
+
+  // 没选东西就别放
+  if (!this.selectedAttractionType) return false;
+
+  // 映射：类型 -> 可视尺寸（和 attraction.js 保持一致）
+  const getVisualSize = (type) => {
+    if (type === 'carousel') return 1.5;
+    if (type === 'ferris')   return 3.5;
+    return 1.2; // food 或默认
+  };
+
+  // 新设施的尺寸
+  const newSize = getVisualSize(this.selectedAttractionType);
+
+  // 2. 缓冲区检查：只要“新设施或邻居设施有一个是大于 1.8 的”，
+  //    就不允许它们贴在一起（包括斜角相邻）
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      // 自己这格会在上面已经检查为空了，这里主要看周围
+      const nx = gridX + dx;
+      const ny = gridY + dy;
+
+      if (nx < 0 || nx >= this.gridWidth || ny < 0 || ny >= this.gridHeight) {
+        continue; // 允许靠墙，如果不想靠墙，可以在这里 return false
+      }
+
+      const existing = this.grid[ny][nx];
+      if (!existing) continue; // 空的没事
+
+      // 已有设施的可视尺寸
+      const existingSize = getVisualSize(existing.type);
+
+      // ⭐ 关键逻辑：
+      //   - 如果两边都很小 (≤ 1.8)，可以紧挨着放
+      //   - 只要“新设施”或“已有设施”任意一个是大的 (> 1.8)，
+      //     就禁止相邻放置，避免视觉重叠
+      if (newSize > 1.8 || existingSize > 1.8) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+},
+
+
+  // 找设施旁边一个可走的格子作为“游玩位置”
+  _findWalkableNeighbor(fx, fy) {
+    const dirs = [
+      { x: fx + 1, y: fy },
+      { x: fx - 1, y: fy },
+      { x: fx,     y: fy + 1 },
+      { x: fx,     y: fy - 1 }
+    ];
+    for (const c of dirs) {
+      if (c.x < 0 || c.x >= this.gridWidth || c.y < 0 || c.y >= this.gridHeight) continue;
+      if (this.grid[c.y][c.x] === null) return c;
+    }
+    return null;
+  },
+
+  placeAttraction(gridX, gridY) {
+  if (!this.selectedAttractionType) return;
+  if (!this.canPlace(gridX, gridY)) return;
+  if (this.money < this.selectedAttractionCost) return;
+
+  const cfg = getFacilityConfig(this.selectedAttractionType);
+
+  const { worldX, worldZ } = this._gridToWorld(gridX, gridY);
+  const mesh = createAttractionMesh(this.selectedAttractionType);
+
+  // 设施很薄，高度 0.1，所以 y 放在 0.05
+  mesh.position.set(worldX, cfg.height / 2, worldZ);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  this.scene.add(mesh);
+
+  const facility = {
+    type: cfg.type,
+    gridX,
+    gridY,
+    mesh,
+    income: cfg.income,
+    happinessGain: cfg.happinessGain,
+    playDuration: cfg.playDuration,
+    capacity: cfg.capacity,
+    currentPlayers: 0,
+    playTile: { x: gridX, y: gridY }
+  };
+
+  this.grid[gridY][gridX] = facility;
+
+  this.money -= this.selectedAttractionCost;
+  this.reputation += 1;
+  this.happiness = Math.min(100, this.happiness + 1);
+  this._updateUI();
+},
+
+
+  _getAllFacilities() {
+    const result = [];
+    for (let y = 0; y < this.gridHeight; y++) {
+      for (let x = 0; x < this.gridWidth; x++) {
+        const cell = this.grid[y][x];
+        if (cell) result.push(cell);
+      }
+    }
+    return result;
+  },
+
+  _manhattan(ax, ay, bx, by) {
+    return Math.abs(ax - bx) + Math.abs(ay - by);
+  },
+
+  // 简化：总是选择最近的一个可达设施
+  // ⭐ 随机性 + 偏好版：选“最值得去”的设施
+// ⭐ 按“权重随机”选择一个设施：更随机但有偏好
+// ⭐ 选择下一个要去的设施：
+// - 避免连续同类型 (不能 1 -> 1)
+// - 带随机权重
+// ⭐ 简单版：按照 偏好 + 质量 + 距离 + 随机 选一个设施
+_chooseFacilityTarget(visitor, startX, startY) {
+  const facilities = this._getAllFacilities().filter(f => f.playTile);
+  if (facilities.length === 0) return null;
+
+  const candidates = [];
+  let totalWeight = 0;
+
+  for (const f of facilities) {
+    const pt = f.playTile;
+
+    const dist = this._manhattan(startX, startY, pt.x, pt.y);
+    const distanceCost = 1 + dist;
+
+    const pref = visitor.preference?.[f.type] ?? 1.0;
+    const quality = f.happinessGain ?? 1;
+
+    const randomFactor = 0.5 + Math.random(); // 0.5 ~ 1.5
+    const baseScore = (pref * quality) / distanceCost;
+    const weight = Math.max(0, baseScore * randomFactor);
+
+    if (weight <= 0) continue;
+
+    candidates.push({ x: pt.x, y: pt.y, weight });
+    totalWeight += weight;
+  }
+
+  if (!candidates.length || totalWeight <= 0) return null;
+
+  // 按权重随机选一个，分数高的概率大
+  let r = Math.random() * totalWeight;
+  for (const c of candidates) {
+    if (r <= c.weight) {
+      return { x: c.x, y: c.y };
+    }
+    r -= c.weight;
+  }
+
+  const last = candidates[candidates.length - 1];
+  return { x: last.x, y: last.y };
+}
+
+
+,
+_spawnVisitor() {
+  const { worldX: sx, worldZ: sz } = this._entranceWorldPos();
+  const start = { x: this.entranceGridX, y: this.entranceGridY };
+  const exit  = { x: this.exitGridX,      y: this.exitGridY };
+
+  // 先创建 visitor（无路径）
+  const v = new Visitor(
+    sx, sz,
+    [],
+    this.scene,
+    (visitor, gx, gy) => this._onVisitorEnterTile(visitor, gx, gy)
+  );
+
+  // 用这个游客的偏好选一个设施
+  const facilityTarget = this._chooseFacilityTarget(v, start.x, start.y);
+
+  const waypoints = [start];
+  if (facilityTarget) waypoints.push(facilityTarget);
+  waypoints.push(exit);
+
+  let fullPath = [];
+  let ok = true;
+  let current = waypoints[0];
+
+  for (let i = 1; i < waypoints.length; i++) {
+    const next = waypoints[i];
+    const seg = this.pathfinder.findPath(current.x, current.y, next.x, next.y);
+    if (!seg) { ok = false; break; }
+    if (fullPath.length > 0) seg.shift();
+    fullPath = fullPath.concat(seg);
+    current = next;
+  }
+
+  if (!ok || fullPath.length === 0) {
+    const direct = this.pathfinder.findPath(start.x, start.y, exit.x, exit.y) || [];
+    fullPath = direct;
+  }
+
+  v.setPath(fullPath);
+  this.visitors.push(v);
+  this.visitorCount++;
+  this._updateUI();
+}
+
+,
+
+  _findFacilityAtTile(gx, gy) {
+    const facilities = this._getAllFacilities();
+    for (const f of facilities) {
+      if (f.playTile && f.playTile.x === gx && f.playTile.y === gy) return f;
+    }
+    return null;
+  },
+
+_onVisitorEnterTile(visitor, gx, gy) {
+  // 已经结束 / 正在玩 / 已经玩过一次 → 不再进入
+  if (visitor.finished || visitor.playing || visitor.hasPlayed) return;
+
+  const facility = this._findFacilityAtTile(gx, gy);
+  if (!facility) return;
+
+  const cap = facility.capacity ?? 1;
+  const cur = facility.currentPlayers ?? 0;
+
+  // 满员就不玩
+  if (cur >= cap) return;
+
+  facility.currentPlayers = cur + 1;
+
+  visitor.playing = true;
+  visitor.playTimer = facility.playDuration;
+  visitor.currentFacility = facility;
+  visitor.hasPlayed = true;
+
+  // 可选：让游客站到设施中心（视觉好看）
+  visitor.mesh.position.x = facility.mesh.position.x;
+  visitor.mesh.position.z = facility.mesh.position.z;
+}
+
+,
+
+  update(deltaTime) {
+  // 生成新游客
+  this.spawnTimer += deltaTime;
+  if (this.spawnTimer >= this.spawnInterval) {
+    this.spawnTimer -= this.spawnInterval;
+    this._spawnVisitor();
+  }
+
+  // 更新所有游客
+  for (let i = this.visitors.length - 1; i >= 0; i--) {
+    const v = this.visitors[i];
+
+    if (v.playing) {
+      // 在玩设施：只减计时，不移动
+      v.playTimer -= deltaTime;
+      if (v.playTimer <= 0 && v.currentFacility) {
+        const f = v.currentFacility;
+
+        // 释放一个名额
+        f.currentPlayers = Math.max(0, (f.currentPlayers ?? 0) - 1);
+
+        v.playing = false;
+        v.currentFacility = null;
+
+        // 给钱 + 全局快乐 + 声望（简单版）
+        this.money += f.income;
+        this.happiness = Math.min(100, this.happiness + f.happinessGain);
         this.reputation += 0.5;
 
         this._updateUI();
-    },
-    
-    update(deltaTime) {
-        this.spawnTimer += deltaTime;
-        if (this.spawnTimer >= this.spawnInterval) {
-            this.spawnTimer -= this.spawnInterval;
-            this._spawnVisitor();
-        }
-
-        for (let i = this.visitors.length - 1; i >= 0; i--) {
-            const v = this.visitors[i];
-
-            if (v.playing) {
-                v.playTimer -= deltaTime;
-                if (v.playTimer <= 0) {
-                    v.playing = false;
-
-                    if (v.currentFacility) {
-                        v.currentFacility.currentPlayers =
-                            Math.max(0, (v.currentFacility.currentPlayers || 0) - 1);
-                        this._updateFacilityColor(v.currentFacility);
-                        v.currentFacility = null;
-                    }
-
-                    // ⭐ happiness 在 (20, 80) 之间 → 再找一个设施
-                    const h = v.happiness ?? 50;
-                    if (h > 20 && h < 80) {
-                        const startX = v.lastGridX ?? this.exitGridX;
-                        const startY = v.lastGridY ?? this.exitGridY;
-
-                        const waypoints = [{ x: startX, y: startY }];
-                        const facilityTarget = this._chooseFacilityTarget(startX, startY);
-                        if (facilityTarget) {
-                            waypoints.push(facilityTarget);
-                        }
-                        waypoints.push({ x: this.exitGridX, y: this.exitGridY });
-
-                        let newPath = [];
-                        let ok = true;
-                        let current = waypoints[0];
-
-                        for (let j = 1; j < waypoints.length; j++) {
-                            const next = waypoints[j];
-                            const segment = this.pathfinder.findPath(current.x, current.y, next.x, next.y);
-                            if (!segment) {
-                                ok = false;
-                                break;
-                            }
-                            if (newPath.length > 0) segment.shift();
-                            newPath = newPath.concat(segment);
-                            current = next;
-                        }
-
-                        if (ok && newPath.length > 0 && typeof v.setPath === 'function') {
-                            v.setPath(newPath);
-                            continue;
-                        }
-                    }
-                }
-                continue;
-            }
-
-            v.update(deltaTime);
-
-            if (v.finished) {
-                if (v.currentFacility) {
-                    v.currentFacility.currentPlayers =
-                        Math.max(0, (v.currentFacility.currentPlayers || 0) - 1);
-                    this._updateFacilityColor(v.currentFacility);
-                    v.currentFacility = null;
-                }
-
-                this.scene.remove(v.mesh);
-                this.visitors.splice(i, 1);
-            }
-        }
+        // ⭐ 不重新规划路径：继续沿着原路径走到出口
+      }
+    } else {
+      // 正常走路
+      v.update(deltaTime);
     }
+
+    // 到达路径终点（出口）后删除
+    if (v.finished) {
+      this.scene.remove(v.mesh);
+      this.visitors.splice(i, 1);
+    }
+  }
+}
 };

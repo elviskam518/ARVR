@@ -49,27 +49,30 @@ export class PathFinder {
             ];
 
             for (const nb of neighbors) {
-                const nk = `${nb.x},${nb.y}`;
+  const nk = `${nb.x},${nb.y}`;
+  const isEnd = (nb.x === ex && nb.y === ey);
 
-                if (!this.isWalkable(nb.x, nb.y)) continue;
-                if (closed.has(nk)) continue;
+  // ⭐ 不是终点的话，必须是可走的；终点格可以是设施格子
+  if (!isEnd && !this.isWalkable(nb.x, nb.y)) continue;
+  if (closed.has(nk)) continue;
 
-                const g = current.g + 1;
-                const h = this.heuristic(nb.x, nb.y, ex, ey);
-                const f = g + h;
+  const g = current.g + 1;
+  const h = this.heuristic(nb.x, nb.y, ex, ey);
+  const f = g + h;
 
-                const exist = open.find(n => n.x === nb.x && n.y === nb.y);
-                if (exist && exist.g <= g) continue;
+  const exist = open.find(n => n.x === nb.x && n.y === nb.y);
+  if (exist && exist.g <= g) continue;
 
-                open.push({
-                    x: nb.x,
-                    y: nb.y,
-                    g,
-                    h,
-                    f,
-                    parent: current
-                });
-            }
+  open.push({
+    x: nb.x,
+    y: nb.y,
+    g,
+    h,
+    f,
+    parent: current
+  });
+}
+
         }
 
         return null; // 无路可走

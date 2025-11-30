@@ -1,251 +1,195 @@
 // src/main.js
-import * as THREE from 'three';
+import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.js';
 import { Game } from './game.js';
-
-// ============================================
-// Three.js 基础设置
-// ============================================
 
 let scene, camera, renderer;
 let ground, raycaster, mouse;
+let lastTime = 0;
+
+// ⭐ 新增：预览 mesh
+let previewMesh = null;
 
 function init() {
-    console.log('Initializing Three.js...');
-    
-    // 创建场景
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB); // 天空蓝
-    
-    // 创建相机（正交相机，俯视图）
-    const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 50;
-    camera = new THREE.OrthographicCamera(
-        (frustumSize * aspect) / -2,
-        (frustumSize * aspect) / 2,
-        frustumSize / 2,
-        frustumSize / -2,
-        1,
-        1000
-    );
-    camera.position.set(0, 50, 0); // 从上往下看
-    camera.lookAt(0, 0, 0);
-    
-    // 创建渲染器
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    document.getElementById('game-container').appendChild(renderer.domElement);
-    
-    // 添加光源
-    addLights();
-    
-    // 创建地面
-    createGround();
-    
-    // 创建边界
-    createBoundaries();
-    
-    // 设置射线检测（用于鼠标点击）
-    raycaster = new THREE.Raycaster();
-    mouse = new THREE.Vector2();
-    
-    // 监听事件
-    window.addEventListener('resize', onWindowResize);
-    renderer.domElement.addEventListener('click', onMouseClick);
-    renderer.domElement.addEventListener('mousemove', onMouseMove);
-    
-    // 初始化游戏逻辑（Game 来自 game.js）
-    Game.init(scene, ground);
-    
-    // 开始渲染循环
-    animate();
-    
-    console.log('Three.js initialized successfully!');
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);
+
+  const aspect = window.innerWidth / window.innerHeight;
+  const frustumSize = 50;
+  camera = new THREE.OrthographicCamera(
+    (frustumSize * aspect) / -2,
+    (frustumSize * aspect) / 2,
+    frustumSize / 2,
+    frustumSize / -2,
+    1,
+    1000
+  );
+  camera.position.set(0, 50, 0);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.getElementById('game-container').appendChild(renderer.domElement);
+
+  addLights();
+  createGround();
+  createBoundaries();
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  window.addEventListener('resize', onWindowResize);
+  renderer.domElement.addEventListener('click', onMouseClick);
+
+  // ⭐ 新增：鼠标移动显示预览
+  renderer.domElement.addEventListener('mousemove', onMouseMove);
+
+  Game.init(scene, ground);
+
+  lastTime = performance.now();
+  animate();
 }
 
 function addLights() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 20, 10);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.camera.left = -30;
-    directionalLight.shadow.camera.right = 30;
-    directionalLight.shadow.camera.top = 30;
-    directionalLight.shadow.camera.bottom = -30;
-    scene.add(directionalLight);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(10, 20, 10);
+  dir.castShadow = true;
+  dir.shadow.camera.left = -30;
+  dir.shadow.camera.right = 30;
+  dir.shadow.camera.top = 30;
+  dir.shadow.camera.bottom = -30;
+  scene.add(dir);
 }
 
 function createGround() {
-    const groundGeometry = new THREE.PlaneGeometry(40, 40);
-    const groundMaterial = new THREE.MeshStandardMaterial({
-        color: 0x90EE90,
-        roughness: 0.8
-    });
-    ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    ground.name = 'ground';
-    scene.add(ground);
-    
-    const gridHelper = new THREE.GridHelper(40, 20, 0x000000, 0x444444);
-    gridHelper.position.y = 0.01;
-    scene.add(gridHelper);
+  const geo = new THREE.PlaneGeometry(40, 40);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x90ee90, roughness: 0.8 });
+  ground = new THREE.Mesh(geo, mat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  ground.name = 'ground';
+  scene.add(ground);
+
+  const gridHelper = new THREE.GridHelper(40, 20, 0x000000, 0x444444);
+  gridHelper.position.y = 0.01;
+  scene.add(gridHelper);
 }
 
 function createBoundaries() {
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-    
-    const walls = [
-        { pos: [0, 1, -20], rot: [0, 0, 0], size: [40, 2, 1] }, // 北
-        { pos: [0, 1, 20], rot: [0, 0, 0], size: [40, 2, 1] },  // 南
-        { pos: [-20, 1, 0], rot: [0, Math.PI / 2, 0], size: [40, 2, 1] }, // 西
-        { pos: [20, 1, 0], rot: [0, Math.PI / 2, 0], size: [40, 2, 1] }   // 东
-    ];
-    
-    walls.forEach(wall => {
-        const geometry = new THREE.BoxGeometry(...wall.size);
-        const mesh = new THREE.Mesh(geometry, wallMaterial);
-        mesh.position.set(...wall.pos);
-        mesh.rotation.set(...wall.rot);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-    });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+  const walls = [
+    { pos: [0, 1, -20], rot: [0, 0, 0], size: [40, 2, 1] },
+    { pos: [0, 1,  20], rot: [0, 0, 0], size: [40, 2, 1] },
+    { pos: [-20, 1, 0], rot: [0, Math.PI / 2, 0], size: [40, 2, 1] },
+    { pos: [ 20, 1, 0], rot: [0, Math.PI / 2, 0], size: [40, 2, 1] }
+  ];
+  walls.forEach(w => {
+    const geo = new THREE.BoxGeometry(...w.size);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(...w.pos);
+    mesh.rotation.set(...w.rot);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  });
 }
-
-// ============================================
-// 鼠标交互
-// ============================================
-
-let previewMesh = null;
 
 function onMouseClick(event) {
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(ground);
-    
-    if (intersects.length > 0) {
-        const point = intersects[0].point;
-        
-        // 使用与 gridToWorld 完全对应的逆运算
-        const gridX = Math.round((point.x + 20 - 1) / 2);
-        const gridY = Math.round((point.z + 20 - 1) / 2);
-        
-        console.log(`Clicked at grid: (${gridX}, ${gridY})`);
-        
-        Game.placeAttraction(gridX, gridY);
-    }
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(ground);
+  if (!hits.length) return;
+
+  const p = hits[0].point;
+  // 反推网格坐标：要和 Game._gridToWorld 对应（每格 2 units）
+  const gridX = Math.round((p.x + 20) / 2);
+  const gridY = Math.round((p.z + 20) / 2);
+
+  Game.placeAttraction(gridX, gridY);
 }
 
+// ⭐ 新增：鼠标移动时显示预览方块
 function onMouseMove(event) {
-    // 如果现在没有选中的游乐设施，就把预览清掉
-    if (!Game.selectedAttractionType) {
-        if (previewMesh) {
-            scene.remove(previewMesh);
-            previewMesh = null;
-        }
-        return;
-    }
-    
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(ground);
-    
-    if (intersects.length > 0) {
-        const point = intersects[0].point;
-        const gridX = Math.round((point.x + 20 - 1) / 2);
-        const gridY = Math.round((point.z + 20 - 1) / 2);
-        
-        showPreview(gridX, gridY);
-    }
-}
-
-function showPreview(gridX, gridY) {
+  // 没选中任何设施 → 不显示预览
+  if (!Game.selectedAttractionType) {
     if (previewMesh) {
-        scene.remove(previewMesh);
+      scene.remove(previewMesh);
+      previewMesh = null;
     }
-    
-    const worldX = gridX * 2 - 20 + 1;
-    const worldZ = gridY * 2 - 20 + 1;
+    return;
+  }
 
-    const canPlaceHere = Game.canPlace(gridX, gridY);
-    const canAfford = Game.money >= Game.selectedAttractionCost;
-    const ok = canPlaceHere && canAfford; // 两个都满足才是绿色
-    
-    const geometry = new THREE.BoxGeometry(1.5, 2, 1.5);
-    const material = new THREE.MeshStandardMaterial({
-        color: ok ? 0x00FF00 : 0xFF0000,
-        transparent: true,
-        opacity: 0.5
-    });
-    
-    previewMesh = new THREE.Mesh(geometry, material);
-    previewMesh.position.set(worldX, 1, worldZ);
-    scene.add(previewMesh);
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(ground);
+  if (!hits.length) return;
+
+  const p = hits[0].point;
+  const gridX = Math.round((p.x + 20) / 2);
+  const gridY = Math.round((p.z + 20) / 2);
+
+  showPreview(gridX, gridY);
 }
 
-// ============================================
-// 渲染循环
-// ============================================
+// ⭐ 新增：预览方块（绿色/红色），尺寸和设施一致
+function showPreview(gridX, gridY) {
+  if (previewMesh) {
+    scene.remove(previewMesh);
+    previewMesh = null;
+  }
 
-let lastTime = Date.now();
+  // 和 attraction.js 的 size 对应
+  let size = 1.2;
+  if (Game.selectedAttractionType === 'carousel') size = 1.5;
+  if (Game.selectedAttractionType === 'ferris') size = 3.5;
+
+  const canPlace = Game.canPlace(gridX, gridY);
+  const canAfford = Game.money >= Game.selectedAttractionCost;
+  const ok = canPlace && canAfford;
+
+  const geometry = new THREE.BoxGeometry(size, 2, size);
+  const material = new THREE.MeshStandardMaterial({
+    color: ok ? 0x00ff00 : 0xff0000,
+    transparent: true,
+    opacity: 0.5
+  });
+
+  previewMesh = new THREE.Mesh(geometry, material);
+
+  // 注意：这里用的世界坐标要和 grid 公式一致
+  const worldX = gridX * 2 - 20;
+  const worldZ = gridY * 2 - 20;
+  previewMesh.position.set(worldX, 1, worldZ);
+
+  scene.add(previewMesh);
+}
 
 function animate() {
-    requestAnimationFrame(animate);
-    
-    const currentTime = Date.now();
-    const deltaTime = (currentTime - lastTime) / 1000;
-    lastTime = currentTime;
-    
-    Game.update(deltaTime);
-    
-    renderer.render(scene, camera);
-}
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
 
-// ============================================
-// 窗口大小调整
-// ============================================
+  Game.update(dt);
+  renderer.render(scene, camera);
+}
 
 function onWindowResize() {
-    const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = 50;
-    
-    camera.left = (frustumSize * aspect) / -2;
-    camera.right = (frustumSize * aspect) / 2;
-    camera.top = frustumSize / 2;
-    camera.bottom = frustumSize / -2;
-    camera.updateProjectionMatrix();
-    
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  const aspect = window.innerWidth / window.innerHeight;
+  const frustumSize = 50;
+  camera.left = (frustumSize * aspect) / -2;
+  camera.right = (frustumSize * aspect) / 2;
+  camera.top = frustumSize / 2;
+  camera.bottom = frustumSize / -2;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ============================================
-// 启动游戏
-// ============================================
-
 window.addEventListener('DOMContentLoaded', init);
-
-window.addEventListener('DOMContentLoaded', () => {
-    const uiPanel = document.getElementById('ui-panel');
-    const toggleBtn = document.getElementById('toggle-ui');
-
-    if (!uiPanel || !toggleBtn) return;
-
-    toggleBtn.addEventListener('click', () => {
-        uiPanel.classList.toggle('collapsed');
-
-        // 面板折叠时，按钮箭头朝右；展开时箭头朝左
-        if (uiPanel.classList.contains('collapsed')) {
-            toggleBtn.textContent = '⮞';
-        } else {
-            toggleBtn.textContent = '⮜';
-        }
-    });
-});
