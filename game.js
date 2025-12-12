@@ -23,6 +23,9 @@ export const Game = {
   visitors: [],
   spawnTimer: 0,
   spawnInterval: 5,
+ baseSpawnInterval: 5,   // 声望为 0 时的基础间隔（秒）
+  minSpawnInterval: 1.5,  // 最快刷怪（间隔下限）
+  maxSpawnInterval: 8,    // 最慢刷怪（间隔上限）
   entranceGridX: 10,
   entranceGridY: 19,
   exitGridX: 10,
@@ -171,7 +174,7 @@ export const Game = {
   // 新设施的尺寸
   const newSize = getVisualSize(this.selectedAttractionType);
 
-  // 2. 缓冲区检查：只要“新设施或邻居设施有一个是大于 1.8 的”，
+  // 2. 缓冲区检查：只要"新设施或邻居设施有一个是大于 1.8 的"，
   //    就不允许它们贴在一起（包括斜角相邻）
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
@@ -188,11 +191,6 @@ export const Game = {
 
       // 已有设施的可视尺寸
       const existingSize = getVisualSize(existing.type);
-
-      // ⭐ 关键逻辑：
-      //   - 如果两边都很小 (≤ 1.8)，可以紧挨着放
-      //   - 只要“新设施”或“已有设施”任意一个是大的 (> 1.8)，
-      //     就禁止相邻放置，避免视觉重叠
       if (newSize > 1.8 || existingSize > 1.8) {
         return false;
       }
@@ -203,7 +201,7 @@ export const Game = {
 },
 
 
-  // 找设施旁边一个可走的格子作为“游玩位置”
+  // 找设施旁边一个可走的格子作为"游玩位置"
   _findWalkableNeighbor(fx, fy) {
     const dirs = [
       { x: fx + 1, y: fy },
@@ -271,13 +269,6 @@ export const Game = {
     return Math.abs(ax - bx) + Math.abs(ay - by);
   },
 
-  // 简化：总是选择最近的一个可达设施
-  // ⭐ 随机性 + 偏好版：选“最值得去”的设施
-// ⭐ 按“权重随机”选择一个设施：更随机但有偏好
-// ⭐ 选择下一个要去的设施：
-// - 避免连续同类型 (不能 1 -> 1)
-// - 带随机权重
-// ⭐ 简单版：按照 偏好 + 质量 + 距离 + 随机 选一个设施
 _chooseFacilityTarget(visitor, startX, startY) {
   const facilities = this._getAllFacilities().filter(f => f.playTile);
   if (facilities.length === 0) return null;
@@ -287,6 +278,11 @@ _chooseFacilityTarget(visitor, startX, startY) {
 
   for (const f of facilities) {
     const pt = f.playTile;
+    
+    // ⭐ 跳过刚玩过的类型（避免连续玩同类型）
+    if (visitor.lastType && f.type === visitor.lastType) {
+      continue;
+    }
 
     const dist = this._manhattan(startX, startY, pt.x, pt.y);
     const distanceCost = 1 + dist;
@@ -376,8 +372,8 @@ _spawnVisitor() {
   },
 
 _onVisitorEnterTile(visitor, gx, gy) {
-  // 已经结束 / 正在玩 / 已经玩过一次 → 不再进入
-  if (visitor.finished || visitor.playing || visitor.hasPlayed) return;
+  // 已经结束 / 正在玩 → 不再进入
+  if (visitor.finished || visitor.playing) return;
 
   const facility = this._findFacilityAtTile(gx, gy);
   if (!facility) return;
@@ -393,16 +389,16 @@ _onVisitorEnterTile(visitor, gx, gy) {
   visitor.playing = true;
   visitor.playTimer = facility.playDuration;
   visitor.currentFacility = facility;
-  visitor.hasPlayed = true;
 
   // 可选：让游客站到设施中心（视觉好看）
   visitor.mesh.position.x = facility.mesh.position.x;
   visitor.mesh.position.z = facility.mesh.position.z;
 }
 
+
 ,
 
-  update(deltaTime) {
+update(deltaTime) {
   // 生成新游客
   this.spawnTimer += deltaTime;
   if (this.spawnTimer >= this.spawnInterval) {
@@ -415,35 +411,115 @@ _onVisitorEnterTile(visitor, gx, gy) {
     const v = this.visitors[i];
 
     if (v.playing) {
-      // 在玩设施：只减计时，不移动
+      // 正在玩设施：只减计时
       v.playTimer -= deltaTime;
-      if (v.playTimer <= 0 && v.currentFacility) {
-        const f = v.currentFacility;
 
-        // 释放一个名额
-        f.currentPlayers = Math.max(0, (f.currentPlayers ?? 0) - 1);
+if (v.playTimer <= 0 && v.currentFacility) {
+  const f = v.currentFacility;
 
-        v.playing = false;
-        v.currentFacility = null;
+  // 释放一个名额
+  f.currentPlayers = Math.max(0, (f.currentPlayers ?? 0) - 1);
 
-        // 给钱 + 全局快乐 + 声望（简单版）
-        this.money += f.income;
-        this.happiness = Math.min(100, this.happiness + f.happinessGain);
-        this.reputation += 0.5;
+  v.playing = false;
+  v.currentFacility = null;
 
-        this._updateUI();
-        // ⭐ 不重新规划路径：继续沿着原路径走到出口
-      }
+  // 结算收入 / 全局快乐 / 声望（简单版）
+  this.money += f.income;
+  this.happiness = Math.min(100, this.happiness + f.happinessGain);
+  this.reputation += 0.5;
+
+  // ⭐ 更新游客个人的快乐值
+  // 根据偏好调整快乐值增长
+  const pref = v.preference?.[f.type] ?? 1.0;
+  const happinessChange = f.happinessGain * pref;
+  v.happiness = Math.max(0, Math.min(100, v.happiness + happinessChange));
+  
+  // 记录刚刚玩的设施类型
+  v.lastType = f.type;
+
+  // -------------------------------------------------
+  // 1️⃣ 找到设施旁边的空地格子，直接从那里开始规划
+  // -------------------------------------------------
+  let startX, startY;
+
+  const fx = f.gridX;
+  const fy = f.gridY;
+  const escapeTile = this._findWalkableNeighbor(fx, fy);
+
+  if (escapeTile) {
+    startX = escapeTile.x;
+    startY = escapeTile.y;
+    
+    const escapeWorld = this._gridToWorld(startX, startY);
+    v.mesh.position.x = escapeWorld.worldX;
+    v.mesh.position.z = escapeWorld.worldZ;
+  } else {
+    startX = v.lastGridX ?? this.exitGridX;
+    startY = v.lastGridY ?? this.exitGridY;
+  }
+
+  const start = { x: startX, y: startY };
+  const exit = { x: this.exitGridX, y: this.exitGridY };
+
+  // -------------------------------------------------
+  // 2️⃣ 根据游客快乐值决定行为：
+  //    - happiness > 80: 非常满意，直接离开
+  //    - happiness < 20: 非常不满，直接离开
+  //    - 20 ≤ happiness ≤ 80: 继续找设施玩
+  // -------------------------------------------------
+  let fullPath = [];
+
+  const shouldLeave = v.happiness > 80 || v.happiness < 20;
+
+  if (shouldLeave) {
+    // 快乐值过高或过低 → 直接去出口
+    fullPath = this.pathfinder.findPath(start.x, start.y, exit.x, exit.y) || [];
+  } else {
+    // 快乐值在正常范围 → 继续找设施玩
+    const nextTarget = this._chooseFacilityTarget(v, start.x, start.y);
+
+    const waypoints = [start];
+    if (nextTarget) waypoints.push(nextTarget);
+    waypoints.push(exit);
+
+    let ok = true;
+    let current = waypoints[0];
+
+    for (let j = 1; j < waypoints.length; j++) {
+      const nxt = waypoints[j];
+      const seg = this.pathfinder.findPath(current.x, current.y, nxt.x, nxt.y);
+      if (!seg) { ok = false; break; }
+      if (fullPath.length > 0) seg.shift();
+      fullPath = fullPath.concat(seg);
+      current = nxt;
+    }
+
+    if (!ok || fullPath.length === 0) {
+      const direct =
+        this.pathfinder.findPath(start.x, start.y, exit.x, exit.y) || [];
+      fullPath = direct;
+    }
+  }
+
+  // -------------------------------------------------
+  // 3️⃣ 设置新路径
+  // -------------------------------------------------
+  v.setPath(fullPath);
+  this._updateUI();
+}
+
     } else {
-      // 正常走路
+      // 不在玩设施 → 按路径走
       v.update(deltaTime);
     }
 
-    // 到达路径终点（出口）后删除
+    // 走到路径终点（通常是出口）后删除游客
     if (v.finished) {
       this.scene.remove(v.mesh);
       this.visitors.splice(i, 1);
     }
   }
 }
+
+
 };

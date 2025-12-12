@@ -35,19 +35,9 @@ export const FACILITY_CONFIG = {
     capacity: 6
   },
 
-  // 默认（万一传了未知 type）
-  default: {
-    type: 'unknown',
-    color: 0xffffff,
-    size: 1.2,
-    height: 0.1,
-    income: 10,
-    happinessGain: 1,
-    playDuration: 2,
-    capacity: 1
-  }
+
 };
 
 export function getFacilityConfig(type) {
-  return FACILITY_CONFIG[type] || FACILITY_CONFIG.default;
+  return FACILITY_CONFIG[type];
 }

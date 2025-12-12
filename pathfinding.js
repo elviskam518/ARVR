@@ -19,6 +19,9 @@ export class PathFinder {
 
     // A* 主函数：从 (sx,sy) → (ex,ey)
     findPath(sx, sy, ex, ey) {
+        // ⭐ Allow starting from facility tiles (visitors leave from there)
+        const startOnFacility = !this.isWalkable(sx, sy);
+        
         const open = [];
         const closed = new Set();
 
@@ -49,30 +52,30 @@ export class PathFinder {
             ];
 
             for (const nb of neighbors) {
-  const nk = `${nb.x},${nb.y}`;
-  const isEnd = (nb.x === ex && nb.y === ey);
+                const nk = `${nb.x},${nb.y}`;
+                const isEnd = (nb.x === ex && nb.y === ey);
+                const isStart = (nb.x === sx && nb.y === sy);
 
-  // ⭐ 不是终点的话，必须是可走的；终点格可以是设施格子
-  if (!isEnd && !this.isWalkable(nb.x, nb.y)) continue;
-  if (closed.has(nk)) continue;
+                // ⭐ Start and end tiles can be facilities; middle tiles must be walkable
+                if (!isEnd && !isStart && !this.isWalkable(nb.x, nb.y)) continue;
+                if (closed.has(nk)) continue;
 
-  const g = current.g + 1;
-  const h = this.heuristic(nb.x, nb.y, ex, ey);
-  const f = g + h;
+                const g = current.g + 1;
+                const h = this.heuristic(nb.x, nb.y, ex, ey);
+                const f = g + h;
 
-  const exist = open.find(n => n.x === nb.x && n.y === nb.y);
-  if (exist && exist.g <= g) continue;
+                const exist = open.find(n => n.x === nb.x && n.y === nb.y);
+                if (exist && exist.g <= g) continue;
 
-  open.push({
-    x: nb.x,
-    y: nb.y,
-    g,
-    h,
-    f,
-    parent: current
-  });
-}
-
+                open.push({
+                    x: nb.x,
+                    y: nb.y,
+                    g,
+                    h,
+                    f,
+                    parent: current
+                });
+            }
         }
 
         return null; // 无路可走

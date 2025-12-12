@@ -2,11 +2,9 @@
 import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.js';
 import { Game } from './game.js';
 
-let scene, camera, renderer;
-let ground, raycaster, mouse;
+let scene, camera, renderer, ground, raycaster, mouse;
 let lastTime = 0;
 
-// ⭐ 新增：预览 mesh
 let previewMesh = null;
 
 function init() {
@@ -112,7 +110,6 @@ function onMouseClick(event) {
   Game.placeAttraction(gridX, gridY);
 }
 
-// ⭐ 新增：鼠标移动时显示预览方块
 function onMouseMove(event) {
   // 没选中任何设施 → 不显示预览
   if (!Game.selectedAttractionType) {
