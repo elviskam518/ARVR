@@ -15,6 +15,7 @@ export class Visitor {
     this.playTimer = 0;
     this.currentFacility = null;
 
+
     // 每个游客的类型偏好（0.5 ~ 1.1）
     this.preference = {
       food:     0.5 + Math.random() * 0.6,
@@ -26,6 +27,7 @@ export class Visitor {
     this.happiness = 50;
     
     this.lastType = null;
+    this.lastFacility = null;   
     this.lastGridX = null;
     this.lastGridY = null;
 

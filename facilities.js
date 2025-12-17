@@ -9,8 +9,8 @@ export const FACILITY_CONFIG = {
     height: 0.1,      // 超薄地板
     income: 20,
     happinessGain: 3,
-    playDuration: 2,  // ⭐ 玩多久（秒）
-    capacity: 2       // ⭐ 一次最多几个人
+    playDuration: 10,  // ⭐ 玩多久（秒）
+    capacity: 1  // ⭐ 一次最多几个人
   },
 
   carousel: {
@@ -20,8 +20,8 @@ export const FACILITY_CONFIG = {
     height: 0.1,
     income: 40,
     happinessGain: 5,
-    playDuration: 3,
-    capacity: 4
+    playDuration: 10,
+    capacity: 2
   },
 
   ferris: {
@@ -31,8 +31,8 @@ export const FACILITY_CONFIG = {
     height: 0.1,
     income: 60,
     happinessGain: 7,
-    playDuration: 4,
-    capacity: 6
+    playDuration: 10,
+    capacity: 3
   },
 
 

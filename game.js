@@ -22,7 +22,7 @@ export const Game = {
 
   visitors: [],
   spawnTimer: 0,
-  spawnInterval: 5,
+  spawnInterval: 1,
  baseSpawnInterval: 5,   // 声望为 0 时的基础间隔（秒）
   minSpawnInterval: 1.5,  // 最快刷怪（间隔下限）
   maxSpawnInterval: 8,    // 最慢刷怪（间隔上限）
@@ -118,11 +118,19 @@ export const Game = {
     const rSpan = document.getElementById('reputation');
     const hSpan = document.getElementById('happiness');
     const vSpan = document.getElementById('visitor-count');
+    const sSpan = document.getElementById('spawn-interval');
 
     if (mSpan) mSpan.textContent = Math.round(this.money);
-    if (rSpan) rSpan.textContent = Math.round(this.reputation);
+      if (rSpan) {
+    const rep = Math.round(this.reputation);
+    rSpan.textContent = rep;
+    if (rep < 0) rSpan.style.color = '#f44336';
+    else if (rep > 50) rSpan.style.color = '#4caf50';
+    else rSpan.style.color = '#fff';
+  }
     if (hSpan) hSpan.textContent = Math.round(this.happiness);
     if (vSpan) vSpan.textContent = this.visitorCount;
+    if (sSpan) sSpan.textContent = this.spawnInterval.toFixed(1);
 
     const updateButton = (selector, label) => {
       const btn = document.querySelector(selector);
@@ -248,9 +256,10 @@ export const Game = {
   this.grid[gridY][gridX] = facility;
 
   this.money -= this.selectedAttractionCost;
-  this.reputation += 1;
   this.happiness = Math.min(100, this.happiness + 1);
   this._updateUI();
+  this._updateFacilityPanel();
+
 },
 
 
@@ -265,11 +274,27 @@ export const Game = {
     return result;
   },
 
+
+    // 调试用：返回所有设施的状态
+  getFacilityStates() {
+    return this._getAllFacilities().map(f => ({
+      type: f.type,
+      gridX: f.gridX,
+      gridY: f.gridY,
+      capacity: f.capacity,
+      currentPlayers: f.currentPlayers
+    }));
+  },
+
   _manhattan(ax, ay, bx, by) {
     return Math.abs(ax - bx) + Math.abs(ay - by);
   },
 
-_chooseFacilityTarget(visitor, startX, startY) {
+
+  
+_chooseFacilityTarget(visitor, startX, startY, options = {}) {
+  const { skipLastType = true, excludeFacility = null } = options;
+
   const facilities = this._getAllFacilities().filter(f => f.playTile);
   if (facilities.length === 0) return null;
 
@@ -278,20 +303,42 @@ _chooseFacilityTarget(visitor, startX, startY) {
 
   for (const f of facilities) {
     const pt = f.playTile;
-    
-    // ⭐ 跳过刚玩过的类型（避免连续玩同类型）
-    if (visitor.lastType && f.type === visitor.lastType) {
+
+    // ① 排除指定的设施（比如刚刚满员的那一家）
+    if (excludeFacility && f === excludeFacility) {
       continue;
     }
 
+    // ② 容量 / 拥挤度处理
+    const cap = f.capacity ?? 1;
+    const cur = f.currentPlayers ?? 0;
+
+    // cap 不合理 或 已经满员 → 直接不考虑这个设施
+    if (cap <= 0 || cur >= cap) {
+      continue;
+    }
+
+    // 拥挤度（0 ~ 1）
+    const crowd = cur / cap;
+    // 拥挤惩罚：越挤，这个值越大
+    const crowdCost = 1 + crowd * 3;   // 0 人 → 1；接近满 → 4
+
+    // ③ 是否跳过“与上一次同类型”的设施
+    if (skipLastType && visitor.lastType && f.type === visitor.lastType) {
+      continue;
+    }
+
+    // ④ 距离 / 偏好 / 质量 / 随机
     const dist = this._manhattan(startX, startY, pt.x, pt.y);
     const distanceCost = 1 + dist;
 
-    const pref = visitor.preference?.[f.type] ?? 1.0;
-    const quality = f.happinessGain ?? 1;
+    const pref = visitor.preference?.[f.type] ?? 1.0;   // 游客对这个类型的偏好
+    const quality = f.happinessGain ?? 1;               // 设施本身“质量”
 
-    const randomFactor = 0.5 + Math.random(); // 0.5 ~ 1.5
-    const baseScore = (pref * quality) / distanceCost;
+    const randomFactor = 0.5 + Math.random();           // 0.5 ~ 1.5 随机扰动
+
+    // 核心评分：偏好 * 质量，除以 距离 和 拥挤度 的惩罚
+    const baseScore = (pref * quality) / (distanceCost * crowdCost);
     const weight = Math.max(0, baseScore * randomFactor);
 
     if (weight <= 0) continue;
@@ -302,7 +349,7 @@ _chooseFacilityTarget(visitor, startX, startY) {
 
   if (!candidates.length || totalWeight <= 0) return null;
 
-  // 按权重随机选一个，分数高的概率大
+  // ⑤ 按权重随机抽一个，分数高的概率大
   let r = Math.random() * totalWeight;
   for (const c of candidates) {
     if (r <= c.weight) {
@@ -313,6 +360,36 @@ _chooseFacilityTarget(visitor, startX, startY) {
 
   const last = candidates[candidates.length - 1];
   return { x: last.x, y: last.y };
+},
+_calculateSpawnInterval() {
+  const baseInterval = 4;      // 声望0时的基准：4秒
+  const minInterval = 2;       // 最快（声望很高）：2秒
+  const maxInterval = 6;       // 最慢（声望很低）：6秒
+  
+  // 定义声望的"满值"
+  const maxPositiveRep = 100;  // 声望+100时达到最快(2秒)
+  const maxNegativeRep = -50;  // 声望-50时达到最慢(6秒)
+  
+  let interval;
+  
+  if (this.reputation >= 0) {
+    // ✅ 正声望：从 4秒 → 2秒（越火爆游客来得越快）
+    const factor = Math.min(1, this.reputation / maxPositiveRep);
+    interval = baseInterval - factor * (baseInterval - minInterval);
+    // rep=0:   4 - 0*(4-2) = 4秒
+    // rep=50:  4 - 0.5*(4-2) = 3秒
+    // rep=100: 4 - 1*(4-2) = 2秒
+    
+  } else {
+    // ❌ 负声望：从 4秒 → 6秒（口碑差游客来得慢）
+    const factor = Math.min(1, Math.abs(this.reputation) / Math.abs(maxNegativeRep));
+    interval = baseInterval + factor * (maxInterval - baseInterval);
+    // rep=0:   4 + 0*(6-4) = 4秒
+    // rep=-25: 4 + 0.5*(6-4) = 5秒
+    // rep=-50: 4 + 1*(6-4) = 6秒
+  }
+  
+  return interval;
 }
 
 
@@ -372,7 +449,6 @@ _spawnVisitor() {
   },
 
 _onVisitorEnterTile(visitor, gx, gy) {
-  // 已经结束 / 正在玩 → 不再进入
   if (visitor.finished || visitor.playing) return;
 
   const facility = this._findFacilityAtTile(gx, gy);
@@ -381,25 +457,82 @@ _onVisitorEnterTile(visitor, gx, gy) {
   const cap = facility.capacity ?? 1;
   const cur = facility.currentPlayers ?? 0;
 
-  // 满员就不玩
-  if (cur >= cap) return;
+  // ================
+  // A. 设施已满：重排路线
+  // ================
+  if (cur >= cap) {
+    // 当前格子作为新的起点
+    const start = { x: gx, y: gy };
+    const exit  = { x: this.exitGridX, y: this.exitGridY };
 
+    // ⭐ 用“允许同 type，但不能同一座”的规则选下一家
+    const nextTarget = this._chooseFacilityTarget(
+      visitor,
+      gx,
+      gy,
+      {
+        skipLastType: false,        // 类型可以重复
+        excludeFacility: facility   // 但不能还是这一个设施
+      }
+    );
+
+    // 如果完全没有其它设施可选：
+    // 这里你说“不能直接离开公园”，那我们就什么都不改，让它继续走原来的 path
+    if (!nextTarget) {
+      return;
+    }
+
+    // 有下一家 → 从当前格子 → 下一家 → 再接回出口
+    const waypoints = [start, nextTarget, exit];
+
+    let fullPath = [];
+    let ok = true;
+    let current = waypoints[0];
+
+    for (let i = 1; i < waypoints.length; i++) {
+      const nxt = waypoints[i];
+      const seg = this.pathfinder.findPath(current.x, current.y, nxt.x, nxt.y);
+      if (!seg) { ok = false; break; }
+      if (fullPath.length > 0) seg.shift();
+      fullPath = fullPath.concat(seg);
+      current = nxt;
+    }
+
+    if (ok && fullPath.length > 0) {
+      visitor.setPath(fullPath);
+    }
+    // 不进入 playing，直接 return
+    return;
+  }
+
+  // ================
+  // B. 有空位：正常进场玩
+  // ================
   facility.currentPlayers = cur + 1;
 
   visitor.playing = true;
   visitor.playTimer = facility.playDuration;
   visitor.currentFacility = facility;
+  this._updateFacilityPanel();
 
-  // 可选：让游客站到设施中心（视觉好看）
+
+  // 记录这次真正玩的设施
+  visitor.lastFacility = facility;
+  visitor.lastType = facility.type;
+
+  // 视觉上站在设施中心
   visitor.mesh.position.x = facility.mesh.position.x;
   visitor.mesh.position.z = facility.mesh.position.z;
 }
+
 
 
 ,
 
 update(deltaTime) {
   // 生成新游客
+  this.reputation = Math.max(-50, this.reputation - deltaTime * 0.1);
+  this.spawnInterval = this._calculateSpawnInterval();
   this.spawnTimer += deltaTime;
   if (this.spawnTimer >= this.spawnInterval) {
     this.spawnTimer -= this.spawnInterval;
@@ -419,6 +552,7 @@ if (v.playTimer <= 0 && v.currentFacility) {
 
   // 释放一个名额
   f.currentPlayers = Math.max(0, (f.currentPlayers ?? 0) - 1);
+  this._updateFacilityPanel();
 
   v.playing = false;
   v.currentFacility = null;
@@ -515,11 +649,50 @@ if (v.playTimer <= 0 && v.currentFacility) {
 
     // 走到路径终点（通常是出口）后删除游客
     if (v.finished) {
-      this.scene.remove(v.mesh);
-      this.visitors.splice(i, 1);
-    }
+  // ⭐ 根据快乐值给予奖惩
+  if (v.happiness < 20) {
+    // 很不满意 → 扣声望
+        this.reputation -= 1;
+  } else if (v.happiness > 80) {
+    // 很满意 → 加声望
+    this.reputation += 1;
+  }
+  
+  this.scene.remove(v.mesh);
+  this.visitors.splice(i, 1);
+  this._updateUI();
+}
   }
 }
+,
+  // 在右侧面板显示每个设施的 当前人数 / 容量
+_updateFacilityPanel() {
+    const container = document.getElementById('facility-list');
+    if (!container) return;
 
+    const list = this._getAllFacilities();
+    if (!list.length) {
+      container.textContent = 'No facilities yet';
+      return;
+    }
+
+    // 用简单的 HTML 列表展示
+    const html = list.map((f, i) => {
+      const name =
+        f.type === 'food' ? '🍔 Food' :
+        f.type === 'carousel' ? '🎠 Carousel' :
+        f.type === 'ferris' ? '🎡 Ferris' :
+        f.type;
+      return `
+        <div class="facility-row">
+          <span>#${i + 1} ${name}</span>
+          <span>(${f.gridX}, ${f.gridY})</span>
+          <span>${f.currentPlayers} / ${f.capacity}</span>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = html;
+  }
 
 };
